@@ -1,5 +1,7 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+print("""
+#    vtrace-dump_memory.py - Dump memory from a breakpoint.
 #
 #    vtrace-show_args_function.py - Script for vtrace API for display arguments function before call.
 #
@@ -19,54 +21,51 @@
 #    GNU General Public License for more details.
 #
 #    You should have received a copy of the GNU General Public License
-#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
-
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.""")
 import vtrace
-import vdb
 import sys
-import envi
-import struct
-from envi.archs.i386 import *
+import logging
+import os
 
-def print_stack(trace, arg_number):
-   n = 0
-   esp = trace.getRegister(REG_ESP)
-   print "[+] Breakpoint at 0x%08x" %(trace.getRegister(REG_EIP))
-   while n < arg_number:
-      try:
-         arg  = trace.readMemory((esp+(n*4)), 4);
-      except:
-         print "[EE] Invalide ESP pointeur (0x%08x)" %(esp)
-         return
-      arg  = struct.unpack("<I", arg)[0]
-      try:
-         arg  = trace.readMemory(arg, 256)
-         print "[+] Arg [ESP+0x%x]\t: '%s'" %((n*4), arg.split('\0')[0])
-      except:
-         print "[+] Arg [ESP+0x%x]\t: %d (%x)" %((n*4), arg, arg)
-      n = n + 1
-   return
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def main(binary, breakpoint, arg_number):
-   trace = vtrace.getTrace()
-   try:
-      trace.execute(binary)
-   except:
-      print "[EE] No such file"
-   try:
-      trace.addBreakByAddr(breakpoint)
-   except:
-      print "[EE] Invalide addr %s" %(hex(breakpoint))
-      return 
-   trace.run()
-   print_stack(trace, arg_number)
-   return (0)
-   
+
+def dump_memory(trace, memory, size):
+    """Dump memory from the breakpoint address."""
+    breakpoint_address = trace.getRegisterByName("eip")
+    logger.info(f"Breakpoint at 0x{breakpoint_address:08x}")
+    try:
+        dump = trace.readMemory(memory, size)
+        dump_file_path = os.path.join(os.getcwd(), "vtrace-memory.dump")
+        with open(dump_file_path, "wb") as fd:
+            fd.write(dump)
+        logger.info("Dump successful. Saved to %s", dump_file_path)
+    except Exception as e:
+        logger.error("Failed to dump memory: %s", e)
+
+
+def main(binary, breakpoint, memory, size):
+    """Main function to execute tracing and memory dump."""
+    trace = vtrace.getTrace()
+    try:
+        trace.execute(binary)
+    except Exception as e:
+        logger.error("Failed to execute binary: %s", e)
+        return
+    try:
+        trace.addBreakpoint(breakpoint)
+    except Exception as e:
+        logger.error("Invalid breakpoint address: %s", e)
+        return
+    trace.run()
+    dump_memory(trace, memory, size)
+
+
 if __name__ == "__main__":
-   if len(sys.argv) == 4:
-      sys.exit(main(sys.argv[1], int(sys.argv[2], 16), int(sys.argv[3])))
-   else:
-      print "Usage: %s <binary> <addr call function> <Numbers of arg>" %(sys.argv[0])
-      sys.exit(-1)
+    if len(sys.argv) == 5:
+        main(sys.argv[1], int(sys.argv[2], 16), int(sys.argv[3], 16), int(sys.argv[4]))
+    else:
+        print("Usage: {} <binary> <addr - breakpoint> <memory addr> <size dump>".format(sys.argv[0]))
+        sys.exit(1)
 
